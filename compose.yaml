@@ -1,0 +1,11 @@
+services:
+  bots:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    volumes:
+      - bot-data:/app/data
+    init: true
+    stop_grace_period: 20s
+volumes:
+  bot-data:
