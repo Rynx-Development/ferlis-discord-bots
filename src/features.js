@@ -26,7 +26,10 @@ export async function ensureServerFeatures(guild,db) {
   let base=existingBase||(baseId?await guild.channels.fetch(baseId).catch(()=>null):null);
   if(!base) base=await guild.channels.create({name:'base-finds',type:ChannelType.GuildText,permissionOverwrites:[{id:guild.id,type:0,deny:[P.SendMessages,P.SendMessagesInThreads,P.CreatePublicThreads,P.CreatePrivateThreads]},{id:guild.client.user.id,type:1,allow:[P.ViewChannel,P.SendMessages,P.EmbedLinks,P.AttachFiles]}],reason:'Base finds submitted with /basefind'});
   db.prepare("INSERT INTO settings VALUES('basefind-channel',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").run(base.id);
-  for(const row of db.prepare("SELECT value FROM settings WHERE key LIKE 'category:%' UNION SELECT channel AS value FROM tickets").all()) {
+  // A hardened server already has explicit, team-scoped channel permissions.
+  // Never re-add Support access to staff tools or transferred tickets on startup.
+  const hardened=db.prepare("SELECT value FROM settings WHERE key='security:hardened'").get()?.value==='1';
+  for(const row of hardened?[]:db.prepare("SELECT value FROM settings WHERE key IN ('category:support','category:purchase','category:appeal','category:something-else') UNION SELECT channel AS value FROM tickets WHERE state!='deleted'").all()) {
     const ch=await guild.channels.fetch(row.value).catch(()=>null);
     if(ch) for(const name of ['Support Team','Moderator']) await ch.permissionOverwrites.edit(roles[name],{ViewChannel:true,SendMessages:true,ReadMessageHistory:true});
   }

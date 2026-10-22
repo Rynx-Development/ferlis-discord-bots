@@ -3,6 +3,7 @@ import {mkdir,writeFile,readFile} from 'node:fs/promises';
 import {join} from 'node:path';
 import {openStore,defaultBlockedWords} from './core.js';
 import {normalPermissions,botPermissions,readOnlyDeny,staffNames,readOnlyPublicIds} from './security-policy.js';
+import {createBackup} from './maintenance.js';
 if(!process.argv.includes('--apply'))throw Error('Review the policy and run with --apply to configure this server.');
 const client=new Client({intents:[I.Guilds]}),db=openStore(process.env.DATA_DIR||'./data'),results={roles:[],channels:[],automod:[],pending:[]};
 const get=key=>db.prepare('SELECT value FROM settings WHERE key=?').get(key)?.value;
@@ -12,6 +13,7 @@ try{
  await client.login(process.env.UTILITY_TOKEN);const guild=await client.guilds.fetch(process.env.GUILD_ID);await guild.roles.fetch();await guild.channels.fetch();
  const bots={moderation:'1562505463747317880',utility:'1562505750884913274',support:'1562506122638794832'};
  const members=Object.fromEntries(await Promise.all(Object.entries(bots).map(async([kind,id])=>[kind,await guild.members.fetch(id)])));
+ await createBackup(db,process.env.DATA_DIR||'./data');
  await mkdir(join(process.env.DATA_DIR||'./data','security'),{recursive:true});
  await writeFile(join(process.env.DATA_DIR||'./data','security','before-hardening.json'),JSON.stringify({at:new Date().toISOString(),roles:guild.roles.cache.map(r=>({id:r.id,name:r.name,permissions:String(r.permissions.bitfield),position:r.position,color:r.color})),channels:guild.channels.cache.map(c=>({id:c.id,name:c.name,parent:c.parentId,overwrites:c.permissionOverwrites?.cache.map(o=>({id:o.id,type:o.type,allow:String(o.allow.bitfield),deny:String(o.deny.bitfield)}))})),verification:guild.verificationLevel,contentFilter:guild.explicitContentFilter},null,2));
  const styles=[['Owner',0xf1c40f,true],['Moderator',0xe74c3c,true],['Development Team',0x9b59b6,true],['Support Team',0x3498db,true],['Media Team',0x1abc9c,true],['Ferlis+',0xf39c12,true],['Server Booster',0xff73fa,true],['Member',0x95a5a6,false],['voice-access',0,false]];
@@ -22,9 +24,9 @@ try{
  await guild.roles.everyone.setPermissions(normalPermissions,reason);
  await guild.edit({name:'Ferlis Client',verificationLevel:2,explicitContentFilter:2,defaultMessageNotifications:1,reason});
  const information=guild.channels.cache.get('1562498816714997770');
- const botRules=Object.values(bots).map(id=>({id,type:1,allow:[P.ViewChannel,P.SendMessages,P.ReadMessageHistory,P.EmbedLinks,P.AttachFiles,P.ManageMessages]}));
+ const botRules=Object.values(bots).map(id=>({id,type:1,allow:[P.ViewChannel,P.SendMessages,P.ReadMessageHistory,P.EmbedLinks,P.AttachFiles]}));
  const staffRules=staffNames.map(name=>({id:roles[name].id,type:0,allow:[P.ViewChannel,P.SendMessages,P.ReadMessageHistory]}));
- const readonly=()=>[{id:guild.id,type:0,allow:[P.ViewChannel,P.ReadMessageHistory],deny:readOnlyDeny},...staffRules,...botRules];
+ const readonly=()=>[{id:guild.id,type:0,allow:[P.ViewChannel,P.ReadMessageHistory],deny:readOnlyDeny},...staffRules.filter(r=>r.id===roles.Moderator.id),...botRules];
  const privateRules=(teams=staffNames,ticket=false)=>[{id:guild.id,type:0,deny:[P.ViewChannel]},...teams.map(name=>({id:roles[name].id,type:0,allow:[P.ViewChannel,P.SendMessages,P.ReadMessageHistory,...(ticket?[P.ManageMessages]:[])]})),...botRules.filter(r=>ticket||r.id!==bots.support).map(r=>ticket&&r.id===bots.utility?{...r,allow:[...r.allow,P.MentionEveryone]}:r)];
  async function ensure(key,name){let channel=get(key)?await guild.channels.fetch(get(key)).catch(()=>null):null;if(!channel)channel=await guild.channels.create({name,type:ChannelType.GuildText,parent:information?.id,permissionOverwrites:readonly(),reason});put(key,channel.id);return channel;}
  const start=await ensure('channel:start-here','📌│start-here'),rules=await ensure('channel:rules','📜│rules');
@@ -32,7 +34,7 @@ try{
  async function panel(channel,key,payload){const old=get(key)?await channel.messages.fetch(get(key)).catch(()=>null):null;if(old)await old.edit(payload);else put(key,(await channel.send(payload)).id);}
  await panel(rules,'rules:panel',{embeds:[new EmbedBuilder().setColor(0x2b2d31).setTitle('FERLIS • Server Rules').setDescription('**1. Respect people.** No harassment, hate, threats, doxxing or explicit content.\n\n**2. No spam or scams.** No unsolicited advertising, mass mentions, impersonation or suspicious links.\n\n**3. Keep accounts safe.** Never post passwords, login tokens, API keys, verification codes or full payment details.\n\n**4. Use the right channel.** Submit base finds through /basefind and configurations through config-sharing. Executables and scripts are blocked in sharing channels.\n\n**5. Keep tickets sensible.** One ticket per issue. Explain the problem and avoid repeated staff pings; staff may be busy or sleeping.\n\n**6. Staff review disputes.** Use an Appeal ticket if you believe a punishment was mistaken. Do not evade a timeout or ban.').setFooter({text:'FERLIS • Community rules'})],allowedMentions:{parse:[]}});
  const banner=await readFile(new URL('../assets/felris-banner.png',import.meta.url));
- await panel(start,'start:panel',{embeds:[new EmbedBuilder().setColor(0x2b2d31).setTitle('FERLIS • Start Here').setDescription('Welcome to **Ferlis Client**.\n\nRead the rules, use the ticket panel for support or purchases, and find media applications under Content & Media.\n\n**Staff will never need your password or login token.** Only follow purchase or download instructions confirmed through the official server.').setImage('attachment://ferlis-banner.png').setFooter({text:'FERLIS • Support, community and updates'})],files:[new AttachmentBuilder(banner,{name:'ferlis-banner.png'})],components:[new ActionRowBuilder().addComponents(new ButtonBuilder().setLabel('Rules').setURL(`https://discord.com/channels/${guild.id}/${rules.id}`).setStyle(ButtonStyle.Link),new ButtonBuilder().setLabel('Open a ticket').setURL(`https://discord.com/channels/${guild.id}/${tickets.id}`).setStyle(ButtonStyle.Link),...(invite?[new ButtonBuilder().setLabel('Join Discord').setURL(invite).setStyle(ButtonStyle.Link)]:[]))],allowedMentions:{parse:[]}});
+ await panel(start,'start:panel',{embeds:[new EmbedBuilder().setColor(0x2b2d31).setTitle('FERLIS • Start Here').setDescription('Welcome to **Ferlis Client**.\n\nRead the rules, use the ticket panel for support or purchases, and find media applications under Content & Media.\n\n**Staff will never need your password or login token.** Only follow purchase or download instructions confirmed through the official server.').setImage('attachment://ferlis-banner.png').setFooter({text:'FERLIS • Support, community and updates'})],files:[new AttachmentBuilder(banner,{name:'ferlis-banner.png'})],components:[new ActionRowBuilder().addComponents(new ButtonBuilder().setLabel('Rules').setURL(`https://discord.com/channels/${guild.id}/${rules.id}`).setStyle(ButtonStyle.Link),new ButtonBuilder().setLabel('Open a ticket').setURL(`https://discord.com/channels/${guild.id}/${tickets.id}`).setStyle(ButtonStyle.Link))],allowedMentions:{parse:[]}});
  for(const channel of guild.channels.cache.values()){
   if(!channel.permissionOverwrites)continue;
   if(readOnlyPublicIds.has(channel.id)||channel.id===start.id||channel.id===rules.id){
@@ -52,11 +54,8 @@ try{
    await channel.permissionOverwrites.set(privateRules(['Support Team','Moderator'],true),reason);
   }
  }
- if(guild.features.includes('BANNER'))await guild.setBanner(banner,reason);else results.pending.push('Server header banner requires Discord banner eligibility; welcome/info banner installed.');
- const logChannel=get('channel:logs');const exemptRoles=staffNames.map(n=>roles[n].id);
- for(const config of [{name:'FERLIS • Mention protection',triggerType:5,triggerMetadata:{mentionTotalLimit:5,mentionRaidProtectionEnabled:true}},{name:'FERLIS • Spam protection',triggerType:3},{name:'FERLIS • Language protection',triggerType:1,triggerMetadata:{keywordFilter:defaultBlockedWords}}]){
-  try{const all=await guild.autoModerationRules.fetch();const old=all.find(r=>r.name===config.name);const body={...config,eventType:1,enabled:true,exemptRoles,actions:[{type:1,metadata:{customMessage:'Please follow the FERLIS rules. Staff can review mistaken blocks.'}},...(logChannel?[{type:2,metadata:{channel:logChannel}}]:[])],reason};if(old)await old.edit(body);else await guild.autoModerationRules.create(body);results.automod.push(config.name);}catch(e){results.pending.push(config.name+': '+e.message);}
- }
+ if(guild.features.includes('BANNER'))await guild.setBanner(banner,reason);else results.pending.push('Server header banner requires Discord banner eligibility; information banner installed.');
+ results.pending.push('Join raid alerts and local message checks retained; no automatic join quarantine was enabled.');
  for(const[kind,member]of Object.entries(members)){
   const role=member.roles.botRole;if(!role)throw Error('Missing managed role for '+kind);
   try{await role.setPermissions(botPermissions[kind],reason);results.roles.push(kind+': limited bot permissions');}catch(e){results.pending.push(kind+' managed role needs owner update: '+e.message);}

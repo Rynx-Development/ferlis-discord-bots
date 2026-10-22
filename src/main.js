@@ -130,7 +130,7 @@ partik.on(Events.GuildMemberAdd,async member=>{
   if(member.guild.id!==env.GUILD_ID||member.user.bot) return;
   try {
     const role=db.prepare("SELECT value FROM settings WHERE key='role:Member'").get()?.value;
-    if(role) await member.roles.add(role,'Automatic new member role');
+    if(role&&db.prepare("SELECT value FROM settings WHERE key='security:member-role-mode'").get()?.value!=='after-first-message') await member.roles.add(role,'Automatic new member role');
     const channel=await member.guild.channels.fetch('1562499165332967605');
     await channel.send({embeds:[new EmbedBuilder().setColor(colors.good).setTitle(brandTitle('Welcome to FERLIS!')).setDescription(`Welcome <@${member.id}>!`).setThumbnail(member.user.displayAvatarURL()).setTimestamp()],allowedMentions:{users:[member.id],parse:[]}});
   } catch(e) { console.error('Welcome/member role:',e.message); }
@@ -139,6 +139,10 @@ async function moderate(message,edited=false) {
   if(message.guildId!==env.GUILD_ID||message.author.bot||message.webhookId) return;
   const member=message.member||await message.guild.members.fetch(message.author.id).catch(()=>null);
   if(!member) return;
+  if(db.prepare("SELECT value FROM settings WHERE key='security:member-role-mode'").get()?.value==='after-first-message'){
+    const memberRole=db.prepare("SELECT value FROM settings WHERE key='role:Member'").get()?.value;
+    if(memberRole&&!member.roles.cache.has(memberRole))await member.roles.add(memberRole,'Member completed Discord verification and sent their first message').catch(e=>console.error('Verified member role:',e.message));
+  }
   const staffExempt=member.permissions.has(P.ManageMessages)||member.permissions.has(P.Administrator);
   const input=moderationInput(message);
   const previousTimeout=member.communicationDisabledUntilTimestamp;

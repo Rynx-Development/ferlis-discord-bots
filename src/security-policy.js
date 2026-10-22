@@ -1,7 +1,7 @@
 export const normalPermissions=['ViewChannel','SendMessages','SendMessagesInThreads','ReadMessageHistory','AddReactions','EmbedLinks','AttachFiles','Connect','Speak','Stream','UseVAD','ChangeNickname','UseApplicationCommands','UseExternalEmojis','UseExternalStickers','UseEmbeddedActivities'];
 const botCommon=['ViewChannel','SendMessages','ReadMessageHistory','EmbedLinks','AttachFiles','AddReactions','UseExternalEmojis','ChangeNickname','SendMessagesInThreads'];
 export const botPermissions={
- moderation:[...botCommon,'ManageGuild','ManageRoles','ManageMessages','ModerateMembers','KickMembers','BanMembers','ViewAuditLog'],
+ moderation:[...botCommon,'ManageRoles','ManageMessages','ModerateMembers','KickMembers','BanMembers','ViewAuditLog'],
  utility:[...botCommon,'ManageChannels','ManageRoles','ManageMessages','Connect','MoveMembers','MuteMembers','DeafenMembers'],
  support:[...botCommon]
 };
